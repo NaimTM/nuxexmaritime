@@ -1,16 +1,52 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
+// Load database and shared helpers before starting the session. The helper sets
+// the same session storage path used by both client login handlers.
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/functions.php';
 
 require_shipowner();
 
-$owner = current_shipowner();
-$owner_id = $owner['id'] ?? $owner['shipowner_id'] ?? 1;
-$owner_email = $owner['email'] ?? '';
+// Never fall back to shipowner ID 1: doing so can expose another client's data
+// when a session is incomplete or stale.
+$sessionOwner = current_shipowner();
+$owner_id = (int)($sessionOwner['id'] ?? $sessionOwner['shipowner_id'] ?? 0);
+if ($owner_id < 1) {
+    unset($_SESSION['shipowner']);
+    header('Location: /login.php');
+    exit;
+}
+
+// Reload the canonical client record so the dashboard always shows the current
+// company name and contact details, even if they were edited after login.
+try {
+    $ownerStmt = $pdo->prepare("
+        SELECT id, company_name, contact_person, email
+        FROM shipowners
+        WHERE id = ?
+        LIMIT 1
+    ");
+    $ownerStmt->execute([$owner_id]);
+    $owner = $ownerStmt->fetch(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    error_log('[Nuzex Maritime] Could not load client account for dashboard: ' . $e->getMessage());
+    http_response_code(500);
+    exit('Unable to load your client account. Please try again later.');
+}
+
+if (!$owner) {
+    unset($_SESSION['shipowner']);
+    header('Location: /login.php');
+    exit;
+}
+
+$owner_id = (int)$owner['id'];
+$owner_email = (string)($owner['email'] ?? '');
+$_SESSION['shipowner'] = [
+    'id' => $owner_id,
+    'company_name' => (string)($owner['company_name'] ?? ''),
+    'contact_person' => (string)($owner['contact_person'] ?? ''),
+    'email' => $owner_email
+];
 
 // Fetch company invoices
 $invoices = [];

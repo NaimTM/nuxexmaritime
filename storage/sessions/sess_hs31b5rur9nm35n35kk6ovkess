@@ -1,0 +1,1 @@
+shipowner|a:4:{s:2:"id";i:1;s:12:"company_name";s:20:"Global Shipping Line";s:14:"contact_person";s:14:"Captain Arthur";s:5:"email";s:25:"owner@globalshipping.test";}seafarer_id|i:1;csrf|s:64:"54df4bc6416a55579cac70fe42191d5dac24fae31293526aed56697c03dca002";admin|a:3:{s:2:"id";i:1;s:9:"full_name";s:20:"System Administrator";s:5:"email";s:24:"admin@nuzexmaritime.test";}

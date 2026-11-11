@@ -22,6 +22,37 @@ try {
     $invoices = [];
 }
 
+// Fetch invoice line items and resolve their linked seafarer names.
+// Invoice items link to crew_deployments, which in turn link to seafarers.
+$invoice_items_by_invoice = [];
+if (!empty($invoices)) {
+    try {
+        $invoiceIds = array_values(array_filter(array_map(
+            static fn($invoice) => (int)($invoice['id'] ?? 0),
+            $invoices
+        )));
+        if ($invoiceIds) {
+            $placeholders = implode(',', array_fill(0, count($invoiceIds), '?'));
+            $itemStmt = $pdo->prepare("
+                SELECT ii.invoice_id, ii.description, ii.amount, cd.seafarer_id, cd.vessel_name,
+                       COALESCE(NULLIF(sf.full_name, ''), 'Seafarer not linked') AS seafarer_name,
+                       COALESCE(NULLIF(cd.rank_title, ''), NULLIF(sf.rank_title, ''), 'Crew') AS crew_rank
+                FROM invoice_items ii
+                LEFT JOIN crew_deployments cd ON cd.id = ii.crew_deployment_id
+                LEFT JOIN seafarers sf ON sf.id = cd.seafarer_id
+                WHERE ii.invoice_id IN ($placeholders)
+                ORDER BY ii.id ASC
+            ");
+            $itemStmt->execute($invoiceIds);
+            foreach ($itemStmt->fetchAll(PDO::FETCH_ASSOC) as $item) {
+                $invoice_items_by_invoice[(int)$item['invoice_id']][] = $item;
+            }
+        }
+    } catch (Exception $e) {
+        error_log('[Nuzex Maritime] Could not load invoice crew details: ' . $e->getMessage());
+    }
+}
+
 // Fetch deployments safely using LEFT JOIN so missing seafarer profiles never drop rows
 $onboard_crew = [];
 $past_crew = [];
@@ -236,6 +267,7 @@ require_once __DIR__ . '/../includes/header.php';
                                 <tr style="background: #f8fafc; border-bottom: 1px solid #e2e8f0; color: #475569; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">
                                     <th style="padding: 1rem 1.5rem;">Invoice #</th>
                                     <th style="padding: 1rem 1.5rem;">Billing Month</th>
+                                    <th style="padding: 1rem 1.5rem;">Seafarer / Invoice Items</th>
                                     <th style="padding: 1rem 1.5rem;">Amount</th>
                                     <th style="padding: 1rem 1.5rem;">Status</th>
                                     <th style="padding: 1rem 1.5rem; text-align: right;">Actions</th>
@@ -249,6 +281,22 @@ require_once __DIR__ . '/../includes/header.php';
                                     <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;">
                                         <td style="padding: 1rem 1.5rem; font-weight: 600; color: #0a2540;"><?= e($inv['invoice_number'] ?? '#' . $inv['id']) ?></td>
                                         <td style="padding: 1rem 1.5rem; color: #334155;"><?= e($inv['billing_month'] ?? 'N/A') ?></td>
+                                        <td style="padding: 1rem 1.5rem; color: #334155; min-width: 220px;">
+                                            <?php if (!empty($invoice_items_by_invoice[(int)$inv['id']])): ?>
+                                                <?php foreach ($invoice_items_by_invoice[(int)$inv['id']] as $invoiceItem): ?>
+                                                    <div style="margin-bottom: .45rem;">
+                                                        <strong style="color: #0a2540;"><?= e($invoiceItem['seafarer_name']) ?></strong>
+                                                        <small style="display:block; color:#64748b;">
+                                                            <?= e($invoiceItem['description']) ?>
+                                                            <?php if (!empty($invoiceItem['vessel_name'])): ?> · <?= e($invoiceItem['vessel_name']) ?><?php endif; ?>
+                                                            · <?= e($invoiceItem['crew_rank']) ?>
+                                                        </small>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            <?php else: ?>
+                                                <span style="color:#94a3b8; font-size:.85rem;">No seafarer linked</span>
+                                            <?php endif; ?>
+                                        </td>
                                         <td style="padding: 1rem 1.5rem; font-weight: 600; color: #0a2540;"><?= money($invAmount) ?></td>
                                         <td style="padding: 1rem 1.5rem;">
                                             <?php 

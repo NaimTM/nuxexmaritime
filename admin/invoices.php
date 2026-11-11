@@ -89,13 +89,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_invoice'])) {
                     $vessel = trim($vessel_names[$i] ?? '');
                     $rank = trim($ranks[$i] ?? '');
 
-                    // Fallback: search database by name if hidden seafarer_id was not populated by autocomplete
-                    if ($sf_id === 0 && $sf_text !== '') {
-                        $sfLookup = $pdo->prepare("SELECT id FROM seafarers WHERE full_name = ? LIMIT 1");
+                    // Resolve a typed name only when it matches exactly one registered seafarer.
+                    // Also verify autocomplete IDs before creating a deployment.
+                    if ($sf_id > 0) {
+                        $sfVerify = $pdo->prepare("SELECT id FROM seafarers WHERE id = ? LIMIT 1");
+                        $sfVerify->execute([$sf_id]);
+                        if (!$sfVerify->fetch()) {
+                            throw new Exception('The selected seafarer no longer exists. Please select the seafarer again.');
+                        }
+                    } elseif ($sf_text !== '') {
+                        $sfLookup = $pdo->prepare("
+                            SELECT id FROM seafarers
+                            WHERE LOWER(TRIM(full_name)) = LOWER(TRIM(?))
+                            ORDER BY id LIMIT 2
+                        ");
                         $sfLookup->execute([$sf_text]);
-                        $foundSf = $sfLookup->fetch();
-                        if ($foundSf) {
-                            $sf_id = (int)$foundSf['id'];
+                        $nameMatches = $sfLookup->fetchAll(PDO::FETCH_ASSOC);
+                        if (count($nameMatches) === 1) {
+                            $sf_id = (int)$nameMatches[0]['id'];
+                        } elseif (count($nameMatches) === 0) {
+                            throw new Exception('No registered seafarer matches "' . $sf_text . '". Please choose a name from the suggestions.');
+                        } else {
+                            throw new Exception('More than one seafarer has that name. Please select the correct profile from the suggestions.');
                         }
                     }
 

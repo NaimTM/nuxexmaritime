@@ -124,7 +124,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_invoice'])) {
                         // Check if an active deployment already exists for this seafarer and vessel
                         $depCheck = $pdo->prepare("
                             SELECT id FROM crew_deployments 
-                            WHERE shipowner_id = ? AND seafarer_id = ? AND vessel_name = ? 
+                            WHERE shipowner_id = ? AND seafarer_id = ? AND vessel_name = ?
+                              AND LOWER(status) IN ('onboard', 'active')
+                            ORDER BY id DESC
                             LIMIT 1
                         ");
                         $depCheck->execute([$shipowner_id, $sf_id, $vessel]);
